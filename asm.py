@@ -4,11 +4,18 @@ import tokenize, StringIO, token, parser, symbol, compiler, ast, astpp, sys
 #s = "1 and 2 and 0 or 4"
 
 s = sys.argv[1]
+
+try:
+    with open(sys.argv[1], 'r') as f:
+        s = f.read()
+except:
+    s = sys.argv[1]
 #print s
 
 labels = {
     "and":  0,
     "or":   0,
+    "if":   0,
 }
 
 AND = """
@@ -40,6 +47,8 @@ or_2_{0}:
 class ASTPrinter(ast.NodeVisitor):
     def __init__(self):
         self.op = "null"
+        self.heap = {"True": 1, "False": 0}
+        self.heap_pointer = 0x200
         super(ASTPrinter, self).__init__()
 
     def generic_visit(self, node):
@@ -50,6 +59,8 @@ class ASTPrinter(ast.NodeVisitor):
     def _do_op(self, op, n):
         if op == "lda":
             print "lda %s" % n
+        elif op == "sta":
+            print "sta %s" % n
 
         elif op == "add":
             print "adc %s" % n
@@ -104,6 +115,13 @@ class ASTPrinter(ast.NodeVisitor):
         else:
             print op
 
+    def _addr(self, name):
+        if name not in self.heap:
+            self.heap[name] = self.heap_pointer
+            self.heap_pointer += 1
+
+        return "$%s" % hex(self.heap[name])[2:]
+
     def visit_BinOp(self, node):
         self.op = "lda"
         super(ASTPrinter, self).visit(node.right)
@@ -144,11 +162,20 @@ class ASTPrinter(ast.NodeVisitor):
         self._do_op(self.op, "#%s" % node.n)
 
     def visit_Name(self, node):
-        self._do_op(self.op, node.id)
+        if node.id == "True":
+            v = "#1"
+        elif node.id == "False":
+            v = "#0"
+        else:
+            v = self._addr(node.id)
+
+        self._do_op(self.op, v)
 
     def visit_Assign(self, node):
+        self._set_op("lda")
         super(ASTPrinter, self).visit(node.value)
-        print "sta %s" % node.targets[0].id
+        self._set_op("sta")
+        super(ASTPrinter, self).visit(node.targets[0])
 
     def visit_If(self, node):
         print node
@@ -156,6 +183,24 @@ class ASTPrinter(ast.NodeVisitor):
         print node.test
         print node.body
         print node.orelse
+        
+        self._set_op("lda")
+        super(ASTPrinter, self).visit(node.test)
+        label = "if_not_%s" % labels["if"]
+        label_2 = "end_if_%s" % labels["if"]
+        labels["if"] += 1
+        print "clc\nadc #0\nbeq %s" % label
+
+        for n in node.body:
+            super(ASTPrinter, self).visit(n)
+
+        if node.orelse:
+            print "jmp %s\n%s:" % (label_2, label)
+
+            for n in node.orelse:
+                super(ASTPrinter, self).visit(n)
+            print "%s:" % label_2
+
 
 
     def visit_Compare(self, node):
