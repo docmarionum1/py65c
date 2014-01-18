@@ -13,9 +13,12 @@ except:
 #print s
 
 labels = {
-    "and":  0,
-    "or":   0,
-    "if":   0,
+    "and":      0,
+    "or":       0,
+    "if":       0,
+    "while":    0,
+    "gt":       0,
+    "gte":      0,
 }
 
 AND = """
@@ -44,17 +47,46 @@ txs
 or_2_{0}:
 """
 
+GT = """
+clc
+sbc {0}
+lda #0
+bcc end_gt_{1}
+adc #0
+end_gt_{1}:
+"""
+
+GTE = """
+sec
+sbc {0}
+lda #0
+bcc end_gte_{1}
+adc #0
+end_gte_{1}:
+"""
+
+
 class ASTPrinter(ast.NodeVisitor):
-    def __init__(self):
+    def __init__(self, debug=False):
         self.op = "null"
         self.heap = {"True": 1, "False": 0}
         self.heap_pointer = 0x200
+        self.debug = debug
         super(ASTPrinter, self).__init__()
 
     def generic_visit(self, node):
         print node
         super(ASTPrinter, self).generic_visit(node)
 
+    def visit(self, node):
+        if self.debug:
+            print "node:", node
+            print "dir(node):", dir(node)
+            for a in ["test", "body", "orelse", "targets", "value", "ops", "comparators"]:
+                if hasattr(node, a):
+                    print "%s:" % a, getattr(node, a)
+
+        super(ASTPrinter, self).visit(node)
 
     def _do_op(self, op, n):
         if op == "lda":
@@ -63,14 +95,16 @@ class ASTPrinter(ast.NodeVisitor):
             print "sta %s" % n
 
         elif op == "add":
-            print "adc %s" % n
+            print "clc\nadc %s" % n
         elif op == "sub":
             print "sec\nsbc %s" % n
 
         elif op == "gt":
-            print "sbc %s" % n
+            print GT.format(n, labels["gt"])
+            labels["gt"] += 1
         elif op == "gte":
-            print "sec\nsbc %s" % n
+            print GTE.format(n, labels["gte"])
+            labels["gte"] += 1
 
         elif op == "and":
             # A and B = 0 if A or B is 0 else B
@@ -178,12 +212,6 @@ class ASTPrinter(ast.NodeVisitor):
         super(ASTPrinter, self).visit(node.targets[0])
 
     def visit_If(self, node):
-        print node
-        print dir(node)
-        print node.test
-        print node.body
-        print node.orelse
-        
         self._set_op("lda")
         super(ASTPrinter, self).visit(node.test)
         label = "if_not_%s" % labels["if"]
@@ -201,6 +229,18 @@ class ASTPrinter(ast.NodeVisitor):
                 super(ASTPrinter, self).visit(n)
             print "%s:" % label_2
 
+    def visit_While(self, node):
+        print "while_{0}:".format(labels["while"])
+        self._set_op("lda")
+        super(ASTPrinter, self).visit(node.test)
+        print "clc\nadc #0\nbeq end_while_{0}".format(labels["while"])
+
+        for n in node.body:
+            super(ASTPrinter, self).visit(n)
+
+        print "jmp while_{0}\nend_while_{0}:".format(labels["while"])
+
+        labels["while"] += 1
 
 
     def visit_Compare(self, node):
@@ -208,9 +248,6 @@ class ASTPrinter(ast.NodeVisitor):
         self.op = "lda"
         super(ASTPrinter, self).visit(node.comparators[0])
         print "pha"
-
-        #print "tsx"
-        #self._set_op(node.ops[0])
 
         #Compute left branch
         self.op = "lda"
@@ -221,17 +258,8 @@ class ASTPrinter(ast.NodeVisitor):
         self._set_op(node.ops[0])
         self._do_op(self.op, "$0100,X")
 
-        #STUFF HERE
-       
-        print node
-        print dir(node)
-        #print node.left.n
-        print node.ops
-        #print node.comparators[0].n
-        print node.comparators[0]
-
 print s
-ap = ASTPrinter()
+ap = ASTPrinter(False)
 t = ast.parse(s)
 ap.visit(t)
 
