@@ -75,14 +75,14 @@ class ASTPrinter(ast.NodeVisitor):
         super(ASTPrinter, self).__init__()
 
     def generic_visit(self, node):
-        print node
+        #print node
         super(ASTPrinter, self).generic_visit(node)
 
     def visit(self, node):
         if self.debug:
             print "node:", node
             print "dir(node):", dir(node)
-            for a in ["test", "body", "orelse", "targets", "value", "ops", "comparators"]:
+            for a in ["test", "body", "orelse", "targets", "value", "ops", "comparators", "ctx", "elts"]:
                 if hasattr(node, a):
                     print "%s:" % a, getattr(node, a)
 
@@ -205,11 +205,44 @@ class ASTPrinter(ast.NodeVisitor):
 
         self._do_op(self.op, v)
 
-    def visit_Assign(self, node):
+    def visit_List(self, node):
+        for n in node.elts:
+            self._set_op("lda")
+            super(ASTPrinter, self).visit(n)
+            print "sta ${0}".format(hex(self.heap_pointer)[2:])
+            self.heap_pointer += 1
+
+    def visit_Subscript(self, node):
+        """
+        print node
+        print dir(node)
+        print node.ctx
+        print node.value
+        print node.slice
+        """
+
+        print "pha"
         self._set_op("lda")
-        super(ASTPrinter, self).visit(node.value)
-        self._set_op("sta")
-        super(ASTPrinter, self).visit(node.targets[0])
+        super(ASTPrinter, self).visit(node.slice)
+        print "tax"
+        print "pla"
+
+        if type(node.ctx) == ast.Load:
+            print "lda {0},x".format(self._addr(node.value.id))
+        elif type(node.ctx) == ast.Store:
+            print "sta {0},x".format(self._addr(node.value.id))
+            
+
+    def visit_Assign(self, node):
+        if type(node.value) == ast.List:
+            self.heap[node.targets[0].id] = self.heap_pointer
+            super(ASTPrinter, self).visit(node.value)
+
+        else:
+            self._set_op("lda")
+            super(ASTPrinter, self).visit(node.value)
+            self._set_op("sta")
+            super(ASTPrinter, self).visit(node.targets[0])
 
     def visit_If(self, node):
         self._set_op("lda")
