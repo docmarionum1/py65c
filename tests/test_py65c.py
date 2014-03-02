@@ -32,24 +32,68 @@ class TestPy65c(unittest.TestCase):
         c = CPU(mmu, 0x1000)
         return c
 
-    def setUp(self):
-        pass
-
-    def test_gt(self):
-        bin = compile(self._loadFile("gt.py"))
+    def _compile_and_run(self, filename):
+        bin = compile(self._loadFile(filename))
         print bin
         c = self._generic_cpu(bin)
         while True:
             try:
+                print hex(c.r.pc), ":", c.mmu.read(c.r.pc), c.r
                 c.step()
             except:
                 break
+
+        return c
+
+    def setUp(self):
+        pass
+
+    def test_gt(self):
+        c = self._compile_and_run("gt.py")
 
         self.assertEqual(c.mmu.read(0x200), True)
         self.assertEqual(c.mmu.read(0x201), True)
         self.assertEqual(c.mmu.read(0x202), False)
         self.assertEqual(c.mmu.read(0x203), False)
         self.assertEqual(c.mmu.read(0x204), False)
+
+    def test_gte(self):
+        c = self._compile_and_run("gte.py")
+
+        self.assertEqual(c.mmu.read(0x200), True)
+        self.assertEqual(c.mmu.read(0x201), True)
+        self.assertEqual(c.mmu.read(0x202), True)
+        self.assertEqual(c.mmu.read(0x203), False)
+        self.assertEqual(c.mmu.read(0x204), False)
+
+
+    def test_list(self):
+        c = self._compile_and_run("list.py")
+
+        self.assertEqual(c.mmu.read(0x200), 1)
+        self.assertEqual(c.mmu.read(0x201), 2)
+        self.assertEqual(c.mmu.read(0x202), 3)
+        self.assertEqual(c.mmu.read(0x203), 4)
+        self.assertEqual(c.mmu.read(0x204), 5)
+
+        #a, i
+        self.assertEqual(c.mmu.read(0x206), 15)
+        self.assertEqual(c.mmu.read(0x207), 0)
+
+        self.assertEqual(c.mmu.read(0x205), 15)
+
+
+    def test_while(self):
+        c = self._compile_and_run("while.py")
+
+        self.assertEqual(c.mmu.read(0x200), 2)
+        self.assertEqual(c.mmu.read(0x201), 64)
+
+    def test_if(self):   
+        c = self._compile_and_run("if.py")
+
+        self.assertEqual(c.mmu.read(0x200), 64)
+
 
     def tearDown(self):
         pass

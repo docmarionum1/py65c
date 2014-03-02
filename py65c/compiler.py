@@ -261,7 +261,7 @@ class ASTPrinter(ast.NodeVisitor):
         self.output.append("while_{0}:".format(labels["while"]))
         self._set_op("lda")
         super(ASTPrinter, self).visit(node.test)
-        self.output.append("clc\nadc #0\nbeq end_while_{0}".format(labels["while"]))
+        self.output.append("clc\nadc #0\nbne while_body_{0}\njmp end_while_{0}\nwhile_body_{0}:".format(labels["while"]))
 
         for n in node.body:
             super(ASTPrinter, self).visit(n)
@@ -287,7 +287,7 @@ class ASTPrinter(ast.NodeVisitor):
         self._do_op(self.op, "$0100,X")
 
 
-def compile(inp, debug=False):
+def compile(inp, debug=False, org=0x1000):
     print inp, type(inp)
     if type(inp) == file:
         s = inp.read()
@@ -307,7 +307,8 @@ def compile(inp, debug=False):
         print astpp.dump(t, False)
 
     asm = "\n".join(ap.output)
-    a = Assembler()
+    print asm
+    a = Assembler(org=org)
     bin = a.assemble(asm)
     return bin
 
