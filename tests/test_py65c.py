@@ -94,6 +94,30 @@ class TestPy65c(unittest.TestCase):
 
         self.assertEqual(c.mmu.read(0x200), 64)
 
+    def test_addsub(self):   
+        c = self._compile_and_run("addsub.py")
+
+        self.assertEqual(c.mmu.read(0x200), 2)
+        self.assertEqual(c.mmu.read(0x201), 1)
+        self.assertEqual(c.mmu.read(0x202), 0xff)
+        self.assertEqual(c.mmu.read(0x203), 0)
+
+    def test_addsub(self):   
+        c = self._compile_and_run("bool.py")
+
+        self.assertEqual(c.mmu.read(0x200), True)
+        self.assertEqual(c.mmu.read(0x201), False)
+        self.assertEqual(c.mmu.read(0x202), False)
+        self.assertEqual(c.mmu.read(0x203), True)
+        self.assertEqual(c.mmu.read(0x204), False)
+        self.assertEqual(c.mmu.read(0x205), 5)
+        self.assertEqual(c.mmu.read(0x206), 4)
+        self.assertEqual(c.mmu.read(0x207), 0)
+        self.assertEqual(c.mmu.read(0x208), 5)
+        self.assertEqual(c.mmu.read(0x209), 4)
+        self.assertEqual(c.mmu.read(0x20a), 4)
+        self.assertEqual(c.mmu.read(0x20b), 4)
+
 
     def tearDown(self):
         pass
