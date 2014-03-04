@@ -118,6 +118,14 @@ class TestPy65c(unittest.TestCase):
         self.assertEqual(c.mmu.read(0x20a), 4)
         self.assertEqual(c.mmu.read(0x20b), 4)
 
+    def test_mul(self):   
+        c = self._compile_and_run("mul.py")
+
+        self.assertEqual(c.mmu.read(0x200), 25)
+        self.assertEqual(c.mmu.read(0x201), 24)
+        self.assertEqual(c.mmu.read(0x202), 0)
+        self.assertEqual(c.mmu.read(0x203), 0)
+        self.assertEqual(c.mmu.read(0x204), 0x10)
 
     def tearDown(self):
         pass

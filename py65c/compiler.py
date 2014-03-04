@@ -13,6 +13,7 @@ labels = {
     "while":    0,
     "gt":       0,
     "gte":      0,
+    "mult":     0
 }
 
 AND = """
@@ -59,6 +60,21 @@ adc #0
 end_gte_{1}:
 """
 
+MULT = """
+tay
+beq mult_zero_{1}
+lda #0
+mult_{1}:
+adc {0}
+dey
+bne mult_{1}
+beq mult_not_zero_{1}
+mult_zero_{1}:
+lda #0
+mult_not_zero_{1}
+"""
+
+
 
 class ASTPrinter(ast.NodeVisitor):
     def __init__(self, debug=False):
@@ -93,6 +109,10 @@ class ASTPrinter(ast.NodeVisitor):
             self.output.append("clc\nadc %s" % n)
         elif op == "sub":
             self.output.append("sec\nsbc %s" % n)
+
+        elif op == "mult":
+            self.output.append(MULT.format(n, labels["mult"]))
+            labels["mult"] += 1
 
         elif op == "gt":
             self.output.append(GT.format(n, labels["gt"]))
@@ -130,6 +150,9 @@ class ASTPrinter(ast.NodeVisitor):
             self.op = "add"
         elif type(op) == ast.Sub:
             self.op = "sub"
+
+        elif type(op) == ast.Mult:
+            self.op = "mult"
 
         elif type(op) == ast.Gt:
             self.op = "gt"
