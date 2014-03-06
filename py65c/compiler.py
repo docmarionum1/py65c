@@ -2,9 +2,6 @@ import tokenize, StringIO, token, parser, symbol, compiler, ast, astpp, sys
 
 from py65asm.assembler import Assembler
 
-s = sys.argv[1]
-
-
 
 labels = {
     "and":      0,
@@ -166,6 +163,33 @@ class ASTPrinter(ast.NodeVisitor):
 
         else:
             print op
+
+    def _malloc(self, size=1, location="zero_page"):
+        if location = "zero_page":
+            start = 0
+        elif location = "stack":
+            start = 0x100
+        else:
+            start = 0x200
+
+        count = 0
+        for i in range(start, 0x10000):
+            if not self.mmu.read(i):
+                count += 1
+            else:
+                count = 0
+
+            if count == size:
+                return i - count
+
+
+        raise Exception("Out of memory")
+
+
+    def _free(self, location, size=1):
+        for i in range(size):
+            self.mmu.write(location+i, 0)
+
 
     def _addr(self, name):
         if name not in self.heap:
