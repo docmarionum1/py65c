@@ -10,7 +10,7 @@ Tests for `py65c` module.
 
 import unittest, os
 
-from py65c.compiler import compile
+from py65c.compiler import compile, Compiler
 from py65emu.cpu import CPU
 from py65emu.mmu import MMU
 
@@ -32,13 +32,33 @@ class TestPy65c(unittest.TestCase):
         c = CPU(mmu, 0x1000)
         return c
 
+    def test_malloc_free(self):
+        c = Compiler(mmu=MMU([(0, 0x10), (0x20, 0x10)]))
+        l1 = c._malloc(0x1)
+        self.assertEqual(l1, 0)
+
+        l2 = c._malloc(0x1)
+        self.assertEqual(l2, 1)
+
+        l3 = c._malloc(0x10)
+        self.assertEqual(l3, 0x20)
+
+        c._free(l1)
+
+        l4 = c._malloc(0x1)
+        self.assertEqual(l4, 0)
+
+        with self.assertRaises(Exception):
+            c._malloc(0x10)
+
+
     def _compile_and_run(self, filename):
         bin = compile(self._loadFile(filename))
-        print bin
+        #print bin
         c = self._generic_cpu(bin)
         while True:
             try:
-                print hex(c.r.pc), ":", c.mmu.read(c.r.pc), c.r
+                #print hex(c.r.pc), ":", c.mmu.read(c.r.pc), c.r
                 c.step()
             except:
                 break
@@ -69,6 +89,15 @@ class TestPy65c(unittest.TestCase):
 
     def test_list(self):
         c = self._compile_and_run("list.py")
+        print c.mmu.read(0x200)
+        print c.mmu.read(0x201)
+        print c.mmu.read(0x202)
+        print c.mmu.read(0x203)
+        print c.mmu.read(0x204)
+        print c.mmu.read(0x205)
+        print c.mmu.read(0x206)
+        print c.mmu.read(0x207)
+        print c.mmu.read(0x200)
 
         self.assertEqual(c.mmu.read(0x200), 1)
         self.assertEqual(c.mmu.read(0x201), 2)
@@ -101,8 +130,9 @@ class TestPy65c(unittest.TestCase):
         self.assertEqual(c.mmu.read(0x201), 1)
         self.assertEqual(c.mmu.read(0x202), 0xff)
         self.assertEqual(c.mmu.read(0x203), 0)
+        self.assertEqual(c.mmu.read(0x204), 1)
 
-    def test_addsub(self):   
+    def test_bool(self):   
         c = self._compile_and_run("bool.py")
 
         self.assertEqual(c.mmu.read(0x200), True)
@@ -126,6 +156,8 @@ class TestPy65c(unittest.TestCase):
         self.assertEqual(c.mmu.read(0x202), 0)
         self.assertEqual(c.mmu.read(0x203), 0)
         self.assertEqual(c.mmu.read(0x204), 0x10)
+        self.assertEqual(c.mmu.read(0x205), 100)
+        self.assertEqual(c.mmu.read(0x206), 105)
 
     def tearDown(self):
         pass

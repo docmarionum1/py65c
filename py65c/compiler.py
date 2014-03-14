@@ -1,6 +1,7 @@
 import tokenize, StringIO, token, parser, symbol, compiler, ast, astpp, sys
 
 from py65asm.assembler import Assembler
+from py65emu.mmu import MMU
 
 
 labels = {
@@ -16,27 +17,17 @@ labels = {
 AND = """
 clc
 adc #0
-beq and_{0}
-pla
-jmp and_2_{0}
-and_{0}:
-tsx
-inx
-txs
-and_2_{0}:
+beq and_{1}
+lda {0}
+and_{1}:
 """
 
 OR = """
 clc
 adc #0
-bne or_{0}
-pla
-jmp or_2_{0}
-or_{0}:
-tsx
-inx
-txs
-or_2_{0}:
+bne or_{1}
+lda {0}
+or_{1}:
 """
 
 GT = """
@@ -73,18 +64,23 @@ mult_not_zero_{1}
 
 
 
-class ASTPrinter(ast.NodeVisitor):
-    def __init__(self, debug=False):
+class Compiler(ast.NodeVisitor):
+    def __init__(self, mmu=None, debug=False):
         self.op = "null"
         self.heap = {"True": 1, "False": 0}
-        self.heap_pointer = 0x200
         self.debug = debug
         self.output = []
-        super(ASTPrinter, self).__init__()
+
+        if mmu:
+            self.mmu = mmu
+        else:
+            self.mmu = MMU([(0, 0x1000)])
+
+        super(Compiler, self).__init__()
 
     def generic_visit(self, node):
         #print node
-        super(ASTPrinter, self).generic_visit(node)
+        super(Compiler, self).generic_visit(node)
 
     def visit(self, node):
         if self.debug:
@@ -94,9 +90,10 @@ class ASTPrinter(ast.NodeVisitor):
                 if hasattr(node, a):
                     print "%s:" % a, getattr(node, a)
 
-        super(ASTPrinter, self).visit(node)
+        super(Compiler, self).visit(node)
 
     def _do_op(self, op, n):
+        print op, n
         if op == "lda":
             self.output.append("lda %s" % n)
         elif op == "sta":
@@ -125,7 +122,7 @@ class ASTPrinter(ast.NodeVisitor):
             # 1 and 0 = 0
             # A is the value in the accumulator and B is the value on top of
             # the stack.
-            self.output.append(AND.format(labels["and"]))
+            self.output.append(AND.format(n, labels["and"]))
             labels["and"] += 1
         elif op == "or":
             # A or B = 0 if A and B is 0 else A
@@ -134,7 +131,7 @@ class ASTPrinter(ast.NodeVisitor):
             # 1 or 0 = 1
             # A is the value in the accumulator and B is the value on top of
             # the stack.
-            self.output.append(OR.format(labels["or"]))
+            self.output.append(OR.format(n, labels["or"]))
             labels["or"] += 1
         else: #debug
             print op
@@ -164,24 +161,30 @@ class ASTPrinter(ast.NodeVisitor):
         else:
             print op
 
+        return self.op
+
     def _malloc(self, size=1, location="zero_page"):
-        if location = "zero_page":
+        if location == "zero_page":
             start = 0
-        elif location = "stack":
+        elif location == "stack":
             start = 0x100
         else:
             start = 0x200
 
         count = 0
         for i in range(start, 0x10000):
-            if not self.mmu.read(i):
-                count += 1
-            else:
+            try:
+                if not self.mmu.read(i):
+                    count += 1
+                else:
+                    count = 0
+            except:
                 count = 0
 
             if count == size:
-                return i - count
-
+                for j in range(i - count + 1, i - count + size + 1):
+                    self.mmu.write(j, 1)
+                return i - count + 1
 
         raise Exception("Out of memory")
 
@@ -193,22 +196,23 @@ class ASTPrinter(ast.NodeVisitor):
 
     def _addr(self, name):
         if name not in self.heap:
-            self.heap[name] = self.heap_pointer
-            self.heap_pointer += 1
+            a = self._malloc(location="heap")
+            self.heap[name] = a
 
         return "$%s" % hex(self.heap[name])[2:]
 
     def visit_BinOp(self, node):
-        self.op = "lda"
-        super(ASTPrinter, self).visit(node.right)
-        self.output.append("pha")
+        self._set_op("lda")
+        super(Compiler, self).visit(node.right)
+        a = self._malloc()
+        self._do_op("sta", a)
 
         self._set_op("lda")
-        super(ASTPrinter, self).visit(node.left)
+        super(Compiler, self).visit(node.left)
 
         self._set_op(node.op)
-        self.output.append("tsx\ninx\ntxs")
-        self._do_op(self.op, "$0100,X")
+        self._do_op(self.op, a)
+        self._free(a)
 
     def visit_BoolOp(self, node):
         """
@@ -218,21 +222,25 @@ class ASTPrinter(ast.NodeVisitor):
 
         #Load first value
         self.op = "lda"
-        super(ASTPrinter, self).visit(node.values[-1])
-        self.output.append("pha")
+        super(Compiler, self).visit(node.values[-1])
+        a = self._malloc()
+        self._do_op("sta", a)
 
         for i in range(len(node.values)-2, -1, -1):
             #Compute the next value, leaving it in A
             self.op = "lda"
-            super(ASTPrinter, self).visit(node.values[i])
+            super(Compiler, self).visit(node.values[i])
 
             #Combine the two values and store on the stack
             self._set_op(node.op)
-            self._do_op(self.op, "STACK")
+            self._do_op(self.op, a)
 
             #Don't need to store if it's the last one
             if i > 0:
-                self.output.append("pha")
+                #self.output.append("pha")
+                self._do_op("sta", a)
+
+        self._free(a)
 
     def visit_Num(self, node):
         self._do_op(self.op, "#%s" % node.n)
@@ -248,70 +256,67 @@ class ASTPrinter(ast.NodeVisitor):
         self._do_op(self.op, v)
 
     def visit_List(self, node):
-        for n in node.elts:
+        a = self._malloc(len(node.elts), location="heap")
+        for i in range(len(node.elts)):
             self._set_op("lda")
-            super(ASTPrinter, self).visit(n)
-            self.output.append("sta ${0}".format(hex(self.heap_pointer)[2:]))
-            self.heap_pointer += 1
+            super(Compiler, self).visit(node.elts[i])
+            self.output.append("sta ${0}".format(hex(a + i)[2:]))
+        return a
 
     def visit_Subscript(self, node):
-        """
-        print node
-        print dir(node)
-        print node.ctx
-        print node.value
-        print node.slice
-        """
-
         self.output.append("pha")
         self._set_op("lda")
-        super(ASTPrinter, self).visit(node.slice)
-        self.output.append("tax")
+        super(Compiler, self).visit(node.slice)
+        self.output.append("tay")
         self.output.append("pla")
 
         if type(node.ctx) == ast.Load:
-            self.output.append("lda {0},x".format(self._addr(node.value.id)))
+            self.output.append("lda ({0}),y".format(self._addr(node.value.id)))
         elif type(node.ctx) == ast.Store:
-            self.output.append("sta {0},x".format(self._addr(node.value.id)))
+            self.output.append("sta ({0}),y".format(self._addr(node.value.id)))
             
 
     def visit_Assign(self, node):
         if type(node.value) == ast.List:
-            self.heap[node.targets[0].id] = self.heap_pointer
-            super(ASTPrinter, self).visit(node.value)
-
+            a = self._malloc(2)
+            h = super(Compiler, self).visit(node.value)
+            self._do_op("lda", "#{0}".format(h & 0xff))
+            self._do_op("sta", a)
+            self._do_op("lda", "#{0}".format(h >> 8))
+            self._do_op("sta", a + 1)
+            self.heap[node.targets[0].id] = a
         else:
             self._set_op("lda")
-            super(ASTPrinter, self).visit(node.value)
+            super(Compiler, self).visit(node.value)
             self._set_op("sta")
-            super(ASTPrinter, self).visit(node.targets[0])
+            super(Compiler, self).visit(node.targets[0])
 
     def visit_If(self, node):
         self._set_op("lda")
-        super(ASTPrinter, self).visit(node.test)
+        super(Compiler, self).visit(node.test)
         label = "if_not_%s" % labels["if"]
         label_2 = "end_if_%s" % labels["if"]
         labels["if"] += 1
         self.output.append("clc\nadc #0\nbeq %s" % label)
 
         for n in node.body:
-            super(ASTPrinter, self).visit(n)
+            super(Compiler, self).visit(n)
 
         if node.orelse:
             self.output.append("jmp %s\n%s:" % (label_2, label))
 
             for n in node.orelse:
-                super(ASTPrinter, self).visit(n)
+                super(Compiler, self).visit(n)
             self.output.append("%s:" % label_2)
 
     def visit_While(self, node):
         self.output.append("while_{0}:".format(labels["while"]))
         self._set_op("lda")
-        super(ASTPrinter, self).visit(node.test)
+        super(Compiler, self).visit(node.test)
         self.output.append("clc\nadc #0\nbne while_body_{0}\njmp end_while_{0}\nwhile_body_{0}:".format(labels["while"]))
 
         for n in node.body:
-            super(ASTPrinter, self).visit(n)
+            super(Compiler, self).visit(n)
 
         self.output.append("jmp while_{0}\nend_while_{0}:".format(labels["while"]))
 
@@ -321,17 +326,18 @@ class ASTPrinter(ast.NodeVisitor):
     def visit_Compare(self, node):
         # Compute right branch and store it on the stack
         self.op = "lda"
-        super(ASTPrinter, self).visit(node.comparators[0])
-        self.output.append("pha")
+        super(Compiler, self).visit(node.comparators[0])
+        a = self._malloc()
+        self._do_op("sta", a)
 
         #Compute left branch
         self.op = "lda"
-        super(ASTPrinter, self).visit(node.left)
+        super(Compiler, self).visit(node.left)
 
         #Do op
-        self.output.append("tsx\ninx")
         self._set_op(node.ops[0])
-        self._do_op(self.op, "$0100,X")
+        self._do_op(self.op, a)
+        self._free(a)
 
 
 def compile(inp, debug=False, org=0x1000):
@@ -345,16 +351,16 @@ def compile(inp, debug=False, org=0x1000):
         except:
             s = inp
 
-    ap = ASTPrinter(debug)
+    c = Compiler(debug=debug)
     t = ast.parse(s)
-    ap.visit(t)
+    c.visit(t)
 
     if debug:
         print s
         print astpp.dump(t, False)
 
-    asm = "\n".join(ap.output)
-    print asm
+    asm = "\n".join(c.output)
+    print "**********\n", asm
     a = Assembler(org=org)
     bin = a.assemble(asm)
     return bin
