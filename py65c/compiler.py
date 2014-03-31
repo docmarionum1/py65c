@@ -11,6 +11,8 @@ labels = {
     "while":    0,
     "gt":       0,
     "gte":      0,
+    "lt":       0,
+    "lte":      0,
     "mult":     0
 }
 
@@ -46,6 +48,28 @@ lda #0
 bcc end_gte_{1}
 adc #0
 end_gte_{1}:
+"""
+
+LT = """
+sec
+sbc {0}
+clc
+bpl end_lt_{1}
+sec
+end_lt_{1}:
+lda #0
+adc #0
+"""
+
+LTE = """
+clc
+sbc {0}
+clc
+bpl end_lte_{1}
+sec
+end_lte_{1}:
+lda #0
+adc #0
 """
 
 MULT = """
@@ -115,6 +139,13 @@ class Compiler(ast.NodeVisitor):
             self.output.append(GTE.format(n, labels["gte"]))
             labels["gte"] += 1
 
+        elif op == "lt":
+            self.output.append(LT.format(n, labels["lt"]))
+            labels["lt"] += 1
+        elif op == "lte":
+            self.output.append(LTE.format(n, labels["lte"]))
+            labels["lte"] += 1
+
         elif op == "and":
             # A and B = 0 if A or B is 0 else B
             # 1 and 2 = 2
@@ -152,6 +183,11 @@ class Compiler(ast.NodeVisitor):
             self.op = "gt"
         elif type(op) == ast.GtE:
             self.op = "gte"
+
+        elif type(op) == ast.Lt:
+            self.op = "lt"
+        elif type(op) == ast.LtE:
+            self.op = "lte"
 
         elif type(op) == ast.And:
             self.op = "and"

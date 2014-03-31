@@ -86,6 +86,27 @@ class TestPy65c(unittest.TestCase):
         self.assertEqual(c.mmu.read(0x203), False)
         self.assertEqual(c.mmu.read(0x204), False)
 
+    def test_lte(self):
+        c = self._compile_and_run("lte.py")
+
+        self.assertEqual(c.mmu.read(0x200), False)
+        self.assertEqual(c.mmu.read(0x201), False)
+        self.assertEqual(c.mmu.read(0x202), False)
+        self.assertEqual(c.mmu.read(0x203), True)
+        self.assertEqual(c.mmu.read(0x204), True)
+
+        self.assertEqual(c.mmu.read(0x205), False)
+        self.assertEqual(c.mmu.read(0x206), False)
+        self.assertEqual(c.mmu.read(0x207), True)
+        self.assertEqual(c.mmu.read(0x208), True)
+        self.assertEqual(c.mmu.read(0x209), True)
+
+        self.assertEqual(c.mmu.read(0x20a), True)
+        self.assertEqual(c.mmu.read(0x20b), False)
+        self.assertEqual(c.mmu.read(0x20c), True)
+        self.assertEqual(c.mmu.read(0x20d), False)
+        self.assertEqual(c.mmu.read(0x20e), True)
+
 
     def test_list(self):
         c = self._compile_and_run("list.py")
@@ -158,6 +179,20 @@ class TestPy65c(unittest.TestCase):
         self.assertEqual(c.mmu.read(0x204), 0x10)
         self.assertEqual(c.mmu.read(0x205), 100)
         self.assertEqual(c.mmu.read(0x206), 105)
+
+    def test_fib(self):
+        c = self._compile_and_run("fib.py")
+
+        self.assertEqual(c.mmu.read(0x200), 1)
+        self.assertEqual(c.mmu.read(0x201), 1)
+        self.assertEqual(c.mmu.read(0x202), 2)
+        self.assertEqual(c.mmu.read(0x203), 3)
+        self.assertEqual(c.mmu.read(0x204), 5)
+        self.assertEqual(c.mmu.read(0x205), 8)
+        self.assertEqual(c.mmu.read(0x206), 13)
+        self.assertEqual(c.mmu.read(0x207), 21)
+        self.assertEqual(c.mmu.read(0x208), 34)
+        self.assertEqual(c.mmu.read(0x209), 55)
 
     def tearDown(self):
         pass
