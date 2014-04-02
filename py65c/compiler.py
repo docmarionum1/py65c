@@ -91,9 +91,10 @@ mult_not_zero_{1}
 class Compiler(ast.NodeVisitor):
     def __init__(self, mmu=None, debug=False):
         self.op = "null"
-        self.heap = {"True": 1, "False": 0}
+        self.symbol_table = {"True": 1, "False": 0}
         self.debug = debug
         self.output = []
+        self.output_end = []
 
         if mmu:
             self.mmu = mmu
@@ -231,11 +232,12 @@ class Compiler(ast.NodeVisitor):
 
 
     def _addr(self, name):
-        if name not in self.heap:
+        if name not in self.symbol_table:
             a = self._malloc(location="heap")
-            self.heap[name] = a
+            self.symbol_table[name] = a
 
-        return "$%s" % hex(self.heap[name])[2:]
+        #return "$%s" % hex(self.symbol_table[name])[2:]
+        return self.symbol_table[name]
 
     def visit_BinOp(self, node):
         self._set_op("lda")
@@ -320,7 +322,7 @@ class Compiler(ast.NodeVisitor):
             self._do_op("sta", a)
             self._do_op("lda", "#{0}".format(h >> 8))
             self._do_op("sta", a + 1)
-            self.heap[node.targets[0].id] = a
+            self.symbol_table[node.targets[0].id] = a
         else:
             self._set_op("lda")
             super(Compiler, self).visit(node.value)
@@ -375,8 +377,76 @@ class Compiler(ast.NodeVisitor):
         self._do_op(self.op, a)
         self._free(a)
 
+    def visit_FunctionDef(self, node):
+        #TODO: Proper scoping
+        print node.name
+        print node.args
+        print node.body
+        args = {}
+        for i in range(len(node.args.args)):
+            arg = {'i': i}
 
-def compile(inp, debug=False, org=0x1000):
+            if i < len(node.args.defaults):
+                arg['default'] = node.args.defaults[i].n
+            else:
+                arg['default'] = None
+
+            args[node.args.args[i].id] = arg
+
+            #register stack location on symtable
+            self.symbol_table[node.args.args[i].id] = '$01%0*x,X' % (2, 3+i)
+
+        self.symbol_table[node.name] = args
+        self.symbol_table["return_value"] = '$01%0*x,X' % (2, 3+len(node.args.args))
+
+        temp = self.output
+        self.output = self.output_end
+
+        self.output.append(node.name + ":")
+        self.output.append("tsx")
+        for n in node.body:
+            super(Compiler, self).visit(n)
+
+        self.output = temp
+
+        #unregister local variables
+        for k,v in args.iteritems():
+            del self.symbol_table[k]
+
+        del self.symbol_table["return_value"]
+
+    def visit_Return(self, node):
+        super(Compiler, self).visit(node.value)
+        self.output.append("sta %s" % self.symbol_table["return_value"])
+        self.output.append("rts")
+
+    def visit_Call(self, node):
+        #Allocate space for return value
+        self.output.append("lda #0")
+        self.output.append("pha")
+
+        #Push arguments onto stack
+        for i in range(len(node.args) - 1, -1, -1):
+            super(Compiler, self).visit(node.args[i])
+            self.output.append("pha")
+
+        #Call function
+        self.output.append("jsr %s" % node.func.id)
+
+        #Pull off all arguments and the return value
+        for i in range(len(node.args)+1):
+            self.output.append("pla")
+
+        print 
+        print node
+        print dir(node)
+        print node.func
+        print node.args
+        print node.kwargs
+
+
+
+def compile(inp, debug=True, org=0x1000):
     print inp, type(inp)
     if type(inp) == file:
         s = inp.read()
@@ -395,7 +465,7 @@ def compile(inp, debug=False, org=0x1000):
         print s
         print astpp.dump(t, False)
 
-    asm = "\n".join(c.output)
+    asm = "\n".join(c.output) + "\n" + "\n".join(c.output_end)
     print "**********\n", asm
     a = Assembler(org=org)
     bin = a.assemble(asm)
