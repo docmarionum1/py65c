@@ -1,8 +1,8 @@
-import tokenize, StringIO, token, parser, symbol, compiler, ast, astpp, sys
+import tokenize, StringIO, token, parser, symbol, compiler, ast, astpp, sys, random, string
 
 from py65asm.assembler import Assembler
 from py65emu.mmu import MMU
-
+from symbols import SymbolTable
 
 labels = {
     "and":      0,
@@ -90,8 +90,11 @@ mult_not_zero_{1}
 
 class Compiler(ast.NodeVisitor):
     def __init__(self, mmu=None, debug=False):
+        """
+            mmu used for allocating memory to variables.  The MMU should
+            be representative of the target device.
+        """
         self.op = "null"
-        self.symbol_table = {"True": 1, "False": 0}
         self.debug = debug
         self.output = []
         self.output_end = []
@@ -100,6 +103,10 @@ class Compiler(ast.NodeVisitor):
             self.mmu = mmu
         else:
             self.mmu = MMU([(0, 0x1000)])
+
+        self.symbol_table = SymbolTable()
+        self.symbol_table.set('True', {'addr': None, 'value': True})
+        self.symbol_table.set('False', {'addr': None, 'value': False})
 
         super(Compiler, self).__init__()
 
@@ -202,7 +209,7 @@ class Compiler(ast.NodeVisitor):
 
     def _malloc(self, size=1, location="zero_page"):
         if location == "zero_page":
-            start = 0
+            start = 0x0
         elif location == "stack":
             start = 0x100
         else:
@@ -227,22 +234,41 @@ class Compiler(ast.NodeVisitor):
 
 
     def _free(self, location, size=1):
-        for i in range(size):
-            self.mmu.write(location+i, 0)
+        if type(location) == int:
+            for i in range(size):
+                self.mmu.write(location+i, 0)
+
+    def _freeVar(self, name, size=1):
+        a = self.symbol_table.getAddr(name)
+        if type(location) == int:
+            self._free(a, size)
+
+        #self.symbol_table
+
+    def _addr(self, name=None, location="heap"):
+        if not name:
+            name = self._id()
+        if not self.symbol_table.getLocal(name):
+            if self.symbol_table.scopeIsGlobal():
+                a = self._malloc(location=location)
+            else:
+                a = '$01%0*x,X' % (2, 3+self.symbol_table.numNonGlobalVars())
 
 
-    def _addr(self, name):
-        if name not in self.symbol_table:
-            a = self._malloc(location="heap")
-            self.symbol_table[name] = a
+            self.symbol_table.put(name, {'addr': a})
 
         #return "$%s" % hex(self.symbol_table[name])[2:]
-        return self.symbol_table[name]
+        return self.symbol_table.getAddr(name)
+
+    def _id(self, size=32, chars=string.ascii_uppercase + string.digits):
+        return ''.join(random.choice(chars) for _ in range(size))
 
     def visit_BinOp(self, node):
         self._set_op("lda")
         super(Compiler, self).visit(node.right)
-        a = self._malloc()
+        #a = self._malloc(location="register")
+        #a = 0
+        a = self._addr(location="zero_page")
         self._do_op("sta", a)
 
         self._set_op("lda")
@@ -261,7 +287,7 @@ class Compiler(ast.NodeVisitor):
         #Load first value
         self.op = "lda"
         super(Compiler, self).visit(node.values[-1])
-        a = self._malloc()
+        a = self._addr(location="zero_page")
         self._do_op("sta", a)
 
         for i in range(len(node.values)-2, -1, -1):
@@ -299,7 +325,7 @@ class Compiler(ast.NodeVisitor):
             self._set_op("lda")
             super(Compiler, self).visit(node.elts[i])
             self.output.append("sta ${0}".format(hex(a + i)[2:]))
-        return a
+        return a, len(node.elts)
 
     def visit_Subscript(self, node):
         self.output.append("pha")
@@ -317,12 +343,12 @@ class Compiler(ast.NodeVisitor):
     def visit_Assign(self, node):
         if type(node.value) == ast.List:
             a = self._malloc(2)
-            h = super(Compiler, self).visit(node.value)
+            h, l = super(Compiler, self).visit(node.value)
             self._do_op("lda", "#{0}".format(h & 0xff))
             self._do_op("sta", a)
             self._do_op("lda", "#{0}".format(h >> 8))
             self._do_op("sta", a + 1)
-            self.symbol_table[node.targets[0].id] = a
+            self.symbol_table.put(node.targets[0].id, {'addr': a, 'list_addr': h, 'len': l})
         else:
             self._set_op("lda")
             super(Compiler, self).visit(node.value)
@@ -365,7 +391,7 @@ class Compiler(ast.NodeVisitor):
         # Compute right branch and store it on the stack
         self.op = "lda"
         super(Compiler, self).visit(node.comparators[0])
-        a = self._malloc()
+        a = self._addr(location="zero_page")
         self._do_op("sta", a)
 
         #Compute left branch
@@ -382,6 +408,10 @@ class Compiler(ast.NodeVisitor):
         print node.name
         print node.args
         print node.body
+
+        #Create new scope
+        self.symbol_table.push()
+
         args = {}
         for i in range(len(node.args.args)):
             arg = {'i': i}
@@ -394,10 +424,12 @@ class Compiler(ast.NodeVisitor):
             args[node.args.args[i].id] = arg
 
             #register stack location on symtable
-            self.symbol_table[node.args.args[i].id] = '$01%0*x,X' % (2, 3+i)
+            #self.symbol_table[node.args.args[i].id] = '$01%0*x,X' % (2, 3+i)
+            self._addr(node.args.args[i].id)
 
-        self.symbol_table[node.name] = args
-        self.symbol_table["return_value"] = '$01%0*x,X' % (2, 3+len(node.args.args))
+        #self._addr("return_value")
+        #return_addr = self._id()
+        #self.symbol_table.put("return_value", return_addr)
 
         temp = self.output
         self.output = self.output_end
@@ -409,21 +441,35 @@ class Compiler(ast.NodeVisitor):
 
         self.output = temp
 
-        #unregister local variables
-        for k,v in args.iteritems():
-            del self.symbol_table[k]
+        a = self._addr("return_value")
 
-        del self.symbol_table["return_value"]
+        for i in range(len(self.output_end)):
+            self.output_end[i] = self.output_end[i].replace('return_value', a)
+
+        #unregister local variables
+        #for k,v in args.iteritems():
+        #    del self.symbol_table[k]
+        #
+        #del self.symbol_table["return_value"]
+
+        num_locals = self.symbol_table.numLocalVars() - len(args) - 1
+        self.symbol_table.pop()
+        self.symbol_table.put(node.name, {'addr': node.name, 'args': args, 'num_locals': num_locals})
 
     def visit_Return(self, node):
         super(Compiler, self).visit(node.value)
-        self.output.append("sta %s" % self.symbol_table["return_value"])
+        #self.output.append("sta %s" % self.symbol_table["return_value"])
+        self.output.append("sta %s" % "return_value")
         self.output.append("rts")
 
     def visit_Call(self, node):
-        #Allocate space for return value
-        self.output.append("lda #0")
-        self.output.append("pha")
+        #Allocate space for return value and local variables
+        #self.output.append("lda #0")
+        #self.output.append("pha")
+        self.output.append("tsx")
+        for i in range(self.symbol_table.get(node.func.id)['num_locals'] + 1):
+            self.output.append("dex")
+        self.output.append("txs")
 
         #Push arguments onto stack
         for i in range(len(node.args) - 1, -1, -1):
@@ -434,8 +480,12 @@ class Compiler(ast.NodeVisitor):
         self.output.append("jsr %s" % node.func.id)
 
         #Pull off all arguments and the return value
-        for i in range(len(node.args)+1):
-            self.output.append("pla")
+        self.output.append("tsx")
+        for i in range(len(node.args)+self.symbol_table.get(node.func.id)['num_locals']):
+            self.output.append("inx")
+        self.output.append("txs")
+
+        self.output.append("pla")
 
         print 
         print node
@@ -465,7 +515,7 @@ def compile(inp, debug=True, org=0x1000):
         print s
         print astpp.dump(t, False)
 
-    asm = "\n".join(c.output) + "\n" + "\n".join(c.output_end)
+    asm = "\n".join(c.output) + "\nbrk\n" + "\n".join(c.output_end)
     print "**********\n", asm
     a = Assembler(org=org)
     bin = a.assemble(asm)

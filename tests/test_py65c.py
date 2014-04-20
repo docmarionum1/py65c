@@ -58,7 +58,7 @@ class TestPy65c(unittest.TestCase):
         c = self._generic_cpu(bin)
         while True:
             try:
-                print hex(c.r.pc), ":", hex(c.mmu.read(c.r.pc)), c.r
+                #print hex(c.r.pc), ":", hex(c.mmu.read(c.r.pc)), c.r
                 c.step()
             except:
                 break
@@ -194,7 +194,7 @@ class TestPy65c(unittest.TestCase):
         self.assertEqual(c.mmu.read(0x208), 34)
         self.assertEqual(c.mmu.read(0x209), 55)
 
-    def test_fib(self):
+    def test_func(self):
         c = self._compile_and_run("func.py")
 
         print c.mmu.read(0x1ff)
@@ -206,8 +206,8 @@ class TestPy65c(unittest.TestCase):
         print c.mmu.read(0x1f9)
 
         self.assertEqual(c.mmu.read(0x200), 3)
-        #self.assertEqual(c.mmu.read(0x201), 5)
-        #self.assertEqual(c.mmu.read(0x202), 6)
+        self.assertEqual(c.mmu.read(0x201), 5)
+        self.assertEqual(c.mmu.read(0x202), 6)
         #self.assertEqual(c.mmu.read(0x203), 2)
         #elf.assertEqual(c.mmu.read(0x204), 3)
 
