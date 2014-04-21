@@ -208,8 +208,15 @@ class TestPy65c(unittest.TestCase):
         self.assertEqual(c.mmu.read(0x200), 3)
         self.assertEqual(c.mmu.read(0x201), 5)
         self.assertEqual(c.mmu.read(0x202), 6)
-        #self.assertEqual(c.mmu.read(0x203), 2)
-        #elf.assertEqual(c.mmu.read(0x204), 3)
+        self.assertEqual(c.mmu.read(0x203), 2)
+        self.assertEqual(c.mmu.read(0x204), 5)
+        self.assertEqual(c.mmu.read(0x205), 4)
+
+        self.assertEqual(c.mmu.read(0x206), 9)
+        self.assertEqual(c.mmu.read(0x207), 20)
+
+        self.assertEqual(c.mmu.read(0x208), 7)
+        self.assertEqual(c.mmu.read(0x209), 14)
 
     def tearDown(self):
         pass

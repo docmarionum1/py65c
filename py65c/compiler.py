@@ -76,6 +76,7 @@ MULT = """
 tay
 beq mult_zero_{1}
 lda #0
+clc
 mult_{1}:
 adc {0}
 dey
@@ -125,7 +126,6 @@ class Compiler(ast.NodeVisitor):
         super(Compiler, self).visit(node)
 
     def _do_op(self, op, n):
-        print op, n
         if op == "lda":
             self.output.append("lda %s" % n)
         elif op == "sta":
@@ -243,8 +243,6 @@ class Compiler(ast.NodeVisitor):
         if type(location) == int:
             self._free(a, size)
 
-        #self.symbol_table
-
     def _addr(self, name=None, location="heap"):
         if not name:
             name = self._id()
@@ -257,7 +255,6 @@ class Compiler(ast.NodeVisitor):
 
             self.symbol_table.put(name, {'addr': a})
 
-        #return "$%s" % hex(self.symbol_table[name])[2:]
         return self.symbol_table.getAddr(name)
 
     def _id(self, size=32, chars=string.ascii_uppercase + string.digits):
@@ -266,8 +263,6 @@ class Compiler(ast.NodeVisitor):
     def visit_BinOp(self, node):
         self._set_op("lda")
         super(Compiler, self).visit(node.right)
-        #a = self._malloc(location="register")
-        #a = 0
         a = self._addr(location="zero_page")
         self._do_op("sta", a)
 
@@ -404,32 +399,24 @@ class Compiler(ast.NodeVisitor):
         self._free(a)
 
     def visit_FunctionDef(self, node):
-        #TODO: Proper scoping
-        print node.name
-        print node.args
-        print node.body
-
         #Create new scope
         self.symbol_table.push()
 
-        args = {}
+        args_dict = {}
+        args_list = []
         for i in range(len(node.args.args)):
-            arg = {'i': i}
+            arg = {'i': i, 'name': node.args.args[i].id}
 
-            if i < len(node.args.defaults):
-                arg['default'] = node.args.defaults[i].n
+            if (len(node.args.args) - i) <= len(node.args.defaults):
+                arg['default'] = node.args.defaults[i + len(node.args.defaults) - len(node.args.args)]
             else:
                 arg['default'] = None
 
-            args[node.args.args[i].id] = arg
+            args_dict[node.args.args[i].id] = arg
+            args_list.append(arg)
 
             #register stack location on symtable
-            #self.symbol_table[node.args.args[i].id] = '$01%0*x,X' % (2, 3+i)
             self._addr(node.args.args[i].id)
-
-        #self._addr("return_value")
-        #return_addr = self._id()
-        #self.symbol_table.put("return_value", return_addr)
 
         temp = self.output
         self.output = self.output_end
@@ -446,34 +433,34 @@ class Compiler(ast.NodeVisitor):
         for i in range(len(self.output_end)):
             self.output_end[i] = self.output_end[i].replace('return_value', a)
 
-        #unregister local variables
-        #for k,v in args.iteritems():
-        #    del self.symbol_table[k]
-        #
-        #del self.symbol_table["return_value"]
-
-        num_locals = self.symbol_table.numLocalVars() - len(args) - 1
+        num_locals = self.symbol_table.numLocalVars() - len(args_list) - 1
         self.symbol_table.pop()
-        self.symbol_table.put(node.name, {'addr': node.name, 'args': args, 'num_locals': num_locals})
+        self.symbol_table.put(node.name, {'addr': node.name, 'args': [args_list, args_dict], 'num_locals': num_locals})
 
     def visit_Return(self, node):
         super(Compiler, self).visit(node.value)
-        #self.output.append("sta %s" % self.symbol_table["return_value"])
         self.output.append("sta %s" % "return_value")
         self.output.append("rts")
 
     def visit_Call(self, node):
         #Allocate space for return value and local variables
-        #self.output.append("lda #0")
-        #self.output.append("pha")
         self.output.append("tsx")
         for i in range(self.symbol_table.get(node.func.id)['num_locals'] + 1):
             self.output.append("dex")
         self.output.append("txs")
 
-        #Push arguments onto stack
-        for i in range(len(node.args) - 1, -1, -1):
-            super(Compiler, self).visit(node.args[i])
+        #Push args onto stack
+        keywords = dict([(i.arg, i.value) for i in node.keywords])
+        defaults = self.symbol_table.get(node.func.id)['args']
+
+        for i in range(len(defaults[0]) - 1, -1, -1):
+            if i < len(node.args):
+                super(Compiler, self).visit(node.args[i])
+            elif defaults[0][i]['name'] in keywords:
+                super(Compiler, self).visit(keywords[defaults[0][i]['name']])
+            else:
+                super(Compiler, self).visit(defaults[0][i]['default'])
+                
             self.output.append("pha")
 
         #Call function
@@ -481,18 +468,10 @@ class Compiler(ast.NodeVisitor):
 
         #Pull off all arguments and the return value
         self.output.append("tsx")
-        for i in range(len(node.args)+self.symbol_table.get(node.func.id)['num_locals']):
+        for i in range(len(defaults[0])+self.symbol_table.get(node.func.id)['num_locals']):
             self.output.append("inx")
         self.output.append("txs")
-
         self.output.append("pla")
-
-        print 
-        print node
-        print dir(node)
-        print node.func
-        print node.args
-        print node.kwargs
 
 
 
