@@ -143,6 +143,7 @@ class TestPy65c(unittest.TestCase):
         c = self._compile_and_run("if.py")
 
         self.assertEqual(c.mmu.read(0x200), 64)
+        self.assertEqual(c.mmu.read(0x201), 20)
 
     def test_addsub(self):   
         c = self._compile_and_run("addsub.py")
@@ -218,6 +219,12 @@ class TestPy65c(unittest.TestCase):
         self.assertEqual(c.mmu.read(0x208), 7)
         self.assertEqual(c.mmu.read(0x209), 14)
 
+    def test_recur(self):
+        c = self._compile_and_run("recur.py")
+
+        self.assertEqual(c.mmu.read(0x200), 3)
+        self.assertEqual(c.mmu.read(0x201), 15)
+        self.assertEqual(c.mmu.read(0x202), 6)
     def tearDown(self):
         pass
 

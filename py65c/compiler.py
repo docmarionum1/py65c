@@ -106,8 +106,8 @@ class Compiler(ast.NodeVisitor):
             self.mmu = MMU([(0, 0x1000)])
 
         self.symbol_table = SymbolTable()
-        self.symbol_table.set('True', {'addr': None, 'value': True})
-        self.symbol_table.set('False', {'addr': None, 'value': False})
+        self.symbol_table.put('True', {'addr': None, 'value': True})
+        self.symbol_table.put('False', {'addr': None, 'value': False})
 
         super(Compiler, self).__init__()
 
@@ -263,7 +263,7 @@ class Compiler(ast.NodeVisitor):
     def visit_BinOp(self, node):
         self._set_op("lda")
         super(Compiler, self).visit(node.right)
-        a = self._addr(location="zero_page")
+        a = self._addr(name=str(hash(node)), location="zero_page")
         self._do_op("sta", a)
 
         self._set_op("lda")
@@ -282,7 +282,7 @@ class Compiler(ast.NodeVisitor):
         #Load first value
         self.op = "lda"
         super(Compiler, self).visit(node.values[-1])
-        a = self._addr(location="zero_page")
+        a = self._addr(name=str(hash(node)), location="zero_page")
         self._do_op("sta", a)
 
         for i in range(len(node.values)-2, -1, -1):
@@ -367,6 +367,8 @@ class Compiler(ast.NodeVisitor):
             for n in node.orelse:
                 super(Compiler, self).visit(n)
             self.output.append("%s:" % label_2)
+        else:
+            self.output.append("%s:" % label)
 
     def visit_While(self, node):
         self.output.append("while_{0}:".format(labels["while"]))
@@ -386,7 +388,7 @@ class Compiler(ast.NodeVisitor):
         # Compute right branch and store it on the stack
         self.op = "lda"
         super(Compiler, self).visit(node.comparators[0])
-        a = self._addr(location="zero_page")
+        a = self._addr(name=str(hash(node)), location="zero_page")
         self._do_op("sta", a)
 
         #Compute left branch
@@ -399,9 +401,13 @@ class Compiler(ast.NodeVisitor):
         self._free(a)
 
     def visit_FunctionDef(self, node):
-        #Create new scope
+        # Create a placeholder for the function definition in the outer scope.
+        self.symbol_table.put(node.name, {"PROCESSING": True})
+
+        # Create new scope for function
         self.symbol_table.push()
 
+        # Process the arguments to create local variables for them and store defaults.
         args_dict = {}
         args_list = []
         for i in range(len(node.args.args)):
@@ -418,6 +424,8 @@ class Compiler(ast.NodeVisitor):
             #register stack location on symtable
             self._addr(node.args.args[i].id)
 
+
+        # Process the function body and store the output at the end.
         temp = self.output
         self.output = self.output_end
 
@@ -428,14 +436,31 @@ class Compiler(ast.NodeVisitor):
 
         self.output = temp
 
-        a = self._addr("return_value")
+        # Update the function definition
+        num_locals = self.symbol_table.numLocalVars() - len(args_list)
+        self.symbol_table.set(node.name, 
+            {'addr': node.name, 'args': [args_list, args_dict], 'num_locals': num_locals})
 
+        #Check for Recursive Calls
+        while True:
+            try:
+                i = self.output_end.index("RECURSION_%s" % node.name)
+                temp = self.output
+                self.output = []
+                super(Compiler, self).visit(self.output_end[i+1])
+                self.output_end = self.output_end[:i] + self.output + self.output_end[i+2:]
+                self.output = temp
+            except:
+                break
+
+        # Resolve Return Addresses
+        a = self._addr("return_value")
         for i in range(len(self.output_end)):
             self.output_end[i] = self.output_end[i].replace('return_value', a)
 
-        num_locals = self.symbol_table.numLocalVars() - len(args_list) - 1
+
         self.symbol_table.pop()
-        self.symbol_table.put(node.name, {'addr': node.name, 'args': [args_list, args_dict], 'num_locals': num_locals})
+        
 
     def visit_Return(self, node):
         super(Compiler, self).visit(node.value)
@@ -443,11 +468,23 @@ class Compiler(ast.NodeVisitor):
         self.output.append("rts")
 
     def visit_Call(self, node):
+        #Check if this is a recursive call
+        if "PROCESSING" in self.symbol_table.get(node.func.id):
+            #Put a placeholder for the call.
+            self.output.append("RECURSION_%s" % node.func.id)
+            self.output.append(node)
+
+            #Allocate space for locals in the call arguments
+            temp = self.output
+            self.output = []
+            for i in range(len(node.args)):
+                super(Compiler, self).visit(node.args[i])
+            self.output = temp
+            return
+
         #Allocate space for return value and local variables
-        self.output.append("tsx")
         for i in range(self.symbol_table.get(node.func.id)['num_locals'] + 1):
-            self.output.append("dex")
-        self.output.append("txs")
+            self.output.append("pha")
 
         #Push args onto stack
         keywords = dict([(i.arg, i.value) for i in node.keywords])
@@ -472,6 +509,7 @@ class Compiler(ast.NodeVisitor):
             self.output.append("inx")
         self.output.append("txs")
         self.output.append("pla")
+        self.output.append("tsx")
 
 
 

@@ -70,8 +70,7 @@ class SymbolTable:
         return self.scope.get(name)['addr']
     
     def set(self, name, value):
-        if not self.scope.set(name, value):
-            self.scope.put(name, value)
+        self.scope.set(name, value)
 
     def put(self, name, value):
         self.scope.put(name, value)
