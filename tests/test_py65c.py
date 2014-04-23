@@ -195,6 +195,8 @@ class TestPy65c(unittest.TestCase):
         self.assertEqual(c.mmu.read(0x208), 34)
         self.assertEqual(c.mmu.read(0x209), 55)
 
+        self.assertEqual(c.mmu.read(0x20b), 8)
+
     def test_func(self):
         c = self._compile_and_run("func.py")
 

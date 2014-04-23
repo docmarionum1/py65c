@@ -463,6 +463,7 @@ class Compiler(ast.NodeVisitor):
         
 
     def visit_Return(self, node):
+        self.op = "lda"
         super(Compiler, self).visit(node.value)
         self.output.append("sta %s" % "return_value")
         self.output.append("rts")
